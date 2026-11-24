@@ -195,7 +195,7 @@ export default function Home() {
         <div className="w-full space-y-3.5">
           <button
             onClick={handleJoinClick}
-            disabled={isLoading}
+            disabled={isLoading || !joiningAllowed}
             className={`w-full py-4 px-6 rounded-2xl font-bold text-lg text-charcoal shadow-lg transition-all duration-200 ${
               joiningAllowed
                 ? 'bg-gold hover:brightness-110 active:scale-[0.99] shadow-gold/20'

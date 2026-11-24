@@ -58,9 +58,10 @@ export default function Join() {
         const list = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           ...docSnap.data(),
-        }));
+        })).filter((service) => service.active !== false);
         list.sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
         setServices(list);
+        setSelectedServiceIds((selected) => selected.filter((id) => list.some((service) => service.id === id)));
         setIsLoadingData(false);
       },
       (err) => {
