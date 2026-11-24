@@ -138,9 +138,13 @@ export default function Join() {
   // If queue is closed or cutoff passed when user is on /join, redirect back to /
   useEffect(() => {
     if (!isLoadingData && !joiningAllowed) {
+      showToast(
+        queueOpen ? t.errors.cutoffPassed : t.errors.queueClosed,
+        'warning'
+      );
       navigate('/', { replace: true });
     }
-  }, [joiningAllowed, isLoadingData, navigate]);
+  }, [joiningAllowed, isLoadingData, navigate, queueOpen, showToast, t.errors.cutoffPassed, t.errors.queueClosed]);
 
   // Selected services calculation (Max 3 allowed)
   const selectedServices = useMemo(() => {

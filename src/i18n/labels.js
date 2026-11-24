@@ -228,6 +228,10 @@ export const labels = {
       statsNoShows: 'No-shows',
       noServices: 'No services configured.',
       noBarbers: 'No barbers configured.',
+      serviceFormAdd: 'Add service',
+      serviceFormEdit: 'Edit service',
+      serviceNameEn: 'Service name (English)',
+      serviceNameGu: 'Service name (Gujarati)',
     },
   },
 
@@ -460,6 +464,10 @@ export const labels = {
       statsNoShows: 'ગેરહાજર',
       noServices: 'કોઈ સેવા ગોઠવેલ નથી.',
       noBarbers: 'કોઈ નાઈ ગોઠવેલ નથી.',
+      serviceFormAdd: 'સેવા ઉમેરો',
+      serviceFormEdit: 'સેવા સંપાદિત કરો',
+      serviceNameEn: 'સેવાનું નામ (અંગ્રેજી)',
+      serviceNameGu: 'સેવાનું નામ (ગુજરાતી)',
     },
   },
 };

@@ -303,7 +303,7 @@ export function callNextAvailable(queueEntries, barbers) {
       !b.onBreak &&
       !busyBarberNames.has(nameLower)
     );
-  });
+  }).sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
 
   if (availableBarbers.length === 0) {
     return null;
