@@ -120,10 +120,16 @@ const fakeTimeAtCutoff = new Date('2026-11-24T20:30:00');
 const resAllowed = isOnlineJoiningAllowed(true, '21:00', fakeTimeBeforeCutoff);
 const resCutoff = isOnlineJoiningAllowed(true, '21:00', fakeTimeAtCutoff);
 const resClosed = isOnlineJoiningAllowed(false, '21:00', fakeTimeBeforeCutoff);
+const midnightBeforeCutoff = new Date('2026-11-24T23:20:00');
+const midnightAtCutoff = new Date('2026-11-24T23:30:00');
+const resMidnightAllowed = isOnlineJoiningAllowed(true, '00:00', midnightBeforeCutoff);
+const resMidnightCutoff = isOnlineJoiningAllowed(true, '00:00', midnightAtCutoff);
 
 console.assert(resAllowed.allowed === true, 'T6 before cutoff should be allowed');
 console.assert(resCutoff.allowed === false && resCutoff.reason === 'cutoff', 'T6 at cutoff should be blocked');
 console.assert(resClosed.allowed === false && resClosed.reason === 'closed', 'T6 queue closed should be blocked');
+console.assert(resMidnightAllowed.allowed === true, 'T7 midnight closing should allow joining before 23:30');
+console.assert(resMidnightCutoff.allowed === false && resMidnightCutoff.reason === 'cutoff', 'T7 midnight closing should block joining at 23:30');
 console.log('✔ Online join cutoff rules passed');
 
 console.log('\nAll updated queue rules & simulation unit tests passed! ✨');

@@ -454,11 +454,11 @@ export async function autoAssign(firestoreDb = db) {
  * 2. Current time is within 30 minutes of closing time (or past it)
  *
  * @param {boolean} queueOpen - Settings flag
- * @param {string} closingTime - "HH:mm" 24h format (e.g. "21:00")
+ * @param {string} closingTime - "HH:mm" 24h format (e.g. "00:00" for midnight)
  * @param {Date} [currentTime=new Date()]
  * @returns {{ allowed: boolean, reason: 'closed' | 'cutoff' | null, cutoffTimeStr: string }}
  */
-export function isOnlineJoiningAllowed(queueOpen, closingTime = '21:00', currentTime = new Date()) {
+export function isOnlineJoiningAllowed(queueOpen, closingTime = '00:00', currentTime = new Date()) {
   if (queueOpen === false) {
     return { allowed: false, reason: 'closed', cutoffTimeStr: '' };
   }
@@ -466,6 +466,11 @@ export function isOnlineJoiningAllowed(queueOpen, closingTime = '21:00', current
   const [closingHours, closingMinutes] = closingTime.split(':').map(Number);
   const closingDate = new Date(currentTime);
   closingDate.setHours(closingHours, closingMinutes, 0, 0);
+
+  // Midnight is the end of the current salon day, not the start of it.
+  if (closingHours === 0 && closingMinutes === 0) {
+    closingDate.setDate(closingDate.getDate() + 1);
+  }
 
   // Cutoff is 30 minutes before closing time
   const cutoffDate = new Date(closingDate.getTime() - 30 * 60 * 1000);

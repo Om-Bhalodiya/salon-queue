@@ -33,7 +33,7 @@ export default function Join() {
   const [services, setServices] = useState([]);
   const [barbers, setBarbers] = useState([]);
   const [queueOpen, setQueueOpen] = useState(true);
-  const [closingTime, setClosingTime] = useState('21:00');
+  const [closingTime, setClosingTime] = useState('00:00');
   const [activeQueue, setActiveQueue] = useState([]);
 
   // Form input state

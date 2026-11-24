@@ -24,7 +24,7 @@ export default function Home() {
 
   // State
   const [queueOpen, setQueueOpen] = useState(true);
-  const [closingTime, setClosingTime] = useState('21:00');
+  const [closingTime, setClosingTime] = useState('00:00');
   const [waitingCount, setWaitingCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [isError, setIsError] = useState(false);

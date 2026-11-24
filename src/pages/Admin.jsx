@@ -23,7 +23,7 @@ function AdminSettings() {
   const [barbers, setBarbers] = useState([]);
   const [queue, setQueue] = useState([]);
   const [queueOpen, setQueueOpen] = useState(true);
-  const [closingTime, setClosingTime] = useState('21:00');
+  const [closingTime, setClosingTime] = useState('00:00');
   const [pins, setPins] = useState({ reception: '', barber: '', owner: '' });
   const [serviceForm, setServiceForm] = useState(null);
   const [disconnected, setDisconnected] = useState(false);
@@ -35,7 +35,7 @@ function AdminSettings() {
       onSnapshot(collection(db, 'services'), (snap) => setServices(snap.docs.map((item) => ({ id: item.id, ...item.data() })).sort((a, b) => (a.order ?? 99) - (b.order ?? 99))), error),
       onSnapshot(collection(db, 'barbers'), (snap) => setBarbers(snap.docs.map((item) => ({ id: item.id, ...item.data() })).sort((a, b) => (a.order ?? 99) - (b.order ?? 99))), error),
       onSnapshot(collection(db, 'queue'), (snap) => setQueue(snap.docs.map((item) => ({ id: item.id, ...item.data() }))), error),
-      onSnapshot(doc(db, 'config', 'settings'), (snap) => { if (snap.exists()) { const data = snap.data(); setQueueOpen(data.queueOpen !== false); setClosingTime(data.closingTime || '21:00'); } setDisconnected(false); }, error),
+      onSnapshot(doc(db, 'config', 'settings'), (snap) => { if (snap.exists()) { const data = snap.data(); setQueueOpen(data.queueOpen !== false); setClosingTime(data.closingTime || '00:00'); } setDisconnected(false); }, error),
       onSnapshot(doc(db, 'config', 'pins'), (snap) => { if (snap.exists()) setPins((current) => ({ ...current, ...snap.data() })); }, error),
     ];
     return () => unsubs.forEach((unsubscribe) => unsubscribe());

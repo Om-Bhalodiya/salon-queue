@@ -42,7 +42,7 @@ function ReceptionDashboard() {
   const [queue, setQueue] = useState([]);
   const [barbers, setBarbers] = useState([]);
   const [services, setServices] = useState([]);
-  const [settings, setSettings] = useState({ queueOpen: true, closingTime: '21:00' });
+  const [settings, setSettings] = useState({ queueOpen: true, closingTime: '00:00' });
   const [filter, setFilter] = useState('all'); // all, waiting, called, in_chair, done, no_show
 
   // Walk-in modal state

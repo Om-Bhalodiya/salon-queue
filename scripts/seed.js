@@ -69,7 +69,7 @@ const DEFAULT_BARBERS = [
 const DEFAULT_SETTINGS = {
   salonName: 'Royal Salon',
   queueOpen: true,
-  closingTime: '21:00',
+  closingTime: '00:00',
 };
 
 // 4. Default PINs
