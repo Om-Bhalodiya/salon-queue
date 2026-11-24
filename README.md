@@ -6,6 +6,8 @@
 
 **GitHub repo:** https://github.com/Om-Bhalodiya/salon-queue
 
+**Demo video:** https://github.com/Om-Bhalodiya/salon-queue/blob/main/demo.mp4
+
 **Hosted on:** Vercel (frontend) + Firebase
 
 ## About
