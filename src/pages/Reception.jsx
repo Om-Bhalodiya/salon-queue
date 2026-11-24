@@ -189,9 +189,24 @@ function ReceptionDashboard() {
   };
 
   // Call Next for a specific barber
-  const handleCallForSpecificBarber = async (barberName) => {
+  const handleCallForSpecificBarber = async (barberName, requestedEntryId = null) => {
+    const barberKey = (barberName || '').trim().toLowerCase();
+    const barber = barbers.find(
+      (item) => (item.nameEN || '').trim().toLowerCase() === barberKey
+    );
+    const isBusy = queue.some(
+      (entry) =>
+        (entry.status === STATUS.CALLED || entry.status === STATUS.IN_CHAIR) &&
+        (entry.assignedBarber || '').trim().toLowerCase() === barberKey
+    );
+
+    if (!barber || !barber.onDuty || barber.onBreak || isBusy) {
+      showToast(t.errors.noBarberAvailable, 'warning');
+      return;
+    }
+
     const candidate = callNextForBarber(queue, barberName);
-    if (!candidate) {
+    if (!candidate || (requestedEntryId && candidate.id !== requestedEntryId)) {
       showToast(
         lang === 'gu'
           ? `${barberName} માટે કોઈ પ્રતીક્ષામાં નથી.`
@@ -535,7 +550,7 @@ function ReceptionDashboard() {
                       {item.status === STATUS.WAITING && (
                         <>
                           <button
-                            onClick={() => handleCallSpecificBarber(sim.expectedBarber || item.barberPreference)}
+                            onClick={() => handleCallForSpecificBarber(sim.expectedBarber || item.barberPreference, item.id)}
                             className="px-3 py-1.5 rounded-xl bg-gold text-charcoal font-bold text-xs hover:brightness-110 active:scale-95 transition shadow-sm"
                           >
                             {t.reception.actionCall}
