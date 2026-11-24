@@ -19,6 +19,7 @@ import {
   hasActiveSpot,
   calculateEstimatedWait,
   isOnlineJoiningAllowed,
+  autoAssign,
   STATUS,
 } from '../lib/queueRules';
 
@@ -153,10 +154,11 @@ export default function Join() {
     return selectedServices.reduce((acc, s) => acc + (Number(s.price) || 0), 0);
   }, [selectedServices]);
 
-  // Live estimated wait time calculation preview
-  const liveEstimatedWait = useMemo(() => {
+  // Live estimated wait time & expected barber calculation preview
+  const simulationPreview = useMemo(() => {
     // Construct a simulated waiting entry at the end of the current queue
     const simulatedEntry = {
+      id: 'simulated_new_entry',
       status: STATUS.WAITING,
       createdAt: Date.now() + 99999999, // Future timestamp -> at end of queue
       totalDuration: totalDuration || 15,
@@ -164,6 +166,9 @@ export default function Join() {
     };
     return calculateEstimatedWait(activeQueue, simulatedEntry, barbers);
   }, [activeQueue, totalDuration, selectedBarber, barbers]);
+
+  const liveEstimatedWait = simulationPreview.estimatedWait;
+  const expectedBarberName = simulationPreview.expectedBarber;
 
   // Service toggle with at most 3 services restriction
   const handleServiceToggle = (serviceId) => {
@@ -249,6 +254,14 @@ export default function Join() {
       };
 
       const docRef = await addDoc(collection(db, 'queue'), newEntry);
+
+      // Trigger Auto-Call rule: if an eligible barber is free, auto-call immediately
+      try {
+        await autoAssign(db);
+      } catch (assignErr) {
+        console.warn('Auto-assign after join note:', assignErr);
+      }
+
       navigate(`/status/${docRef.id}`);
     } catch (err) {
       console.error('Failed to join queue:', err);
@@ -477,6 +490,29 @@ export default function Join() {
                 {totalPrice}
               </span>
             </div>
+
+            {/* When Any Barber is selected, show expected barber */}
+            {selectedBarber === 'any' && (
+              <div className="flex justify-between text-xs text-white/80">
+                <span>{t.join.expectedBarber}:</span>
+                <span className="font-semibold text-gold">
+                  {expectedBarberName
+                    ? (() => {
+                        const bDoc = barbers.find(
+                          (b) =>
+                            b.nameEN.toLowerCase() ===
+                            expectedBarberName.toLowerCase()
+                        );
+                        return bDoc
+                          ? lang === 'gu'
+                            ? bDoc.nameGU
+                            : bDoc.nameEN
+                          : expectedBarberName;
+                      })()
+                    : '—'}
+                </span>
+              </div>
+            )}
 
             <div className="flex justify-between text-xs text-white/80 pt-1 border-t border-gold/20">
               <span>{t.join.estimatedWait}:</span>

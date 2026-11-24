@@ -20,6 +20,7 @@ import {
   getPositionInQueue,
   calculateEstimatedWait,
   isValidTransition,
+  autoAssign,
 } from '../lib/queueRules';
 
 export default function Status() {
@@ -120,10 +121,15 @@ export default function Status() {
     return getPositionInQueue(allQueue, entry);
   }, [allQueue, entry]);
 
-  const estimatedWait = useMemo(() => {
-    if (!entry || entry.status !== STATUS.WAITING) return null;
+  const simulationResult = useMemo(() => {
+    if (!entry || entry.status !== STATUS.WAITING) {
+      return { expectedBarber: null, estimatedWait: null };
+    }
     return calculateEstimatedWait(allQueue, entry, barbers);
   }, [allQueue, entry, barbers]);
+
+  const estimatedWait = simulationResult.estimatedWait;
+  const expectedBarberName = simulationResult.expectedBarber;
 
   // Service details mapping
   const selectedServiceDetails = useMemo(() => {
@@ -174,6 +180,14 @@ export default function Status() {
       await updateDoc(doc(db, 'queue', entry.id), {
         status: STATUS.CANCELLED,
       });
+
+      // Trigger Auto-Call rule: a cancellation may allow a waiting customer to be called
+      try {
+        await autoAssign(db);
+      } catch (err) {
+        console.warn('Auto-assign after cancel note:', err);
+      }
+
       setShowCancelModal(false);
       showToast(t.statusPage.cancelledAlert, 'info');
       navigate('/');
@@ -235,7 +249,7 @@ export default function Status() {
       : entry.assignedBarber || (lang === 'gu' ? 'નાઈ' : 'Barber');
 
     return (
-      <div className="min-h-screen bg-gradient-to-b from-amber-500 via-gold to-yellow-600 text-charcoal flex flex-col justify-between p-6 animate-in fade-in duration-300">
+      <div className="min-h-screen bg-gradient-to-b from-amber-500 via-gold to-yellow-600 text-charcoal flex flex-col justify-between p-4 sm:p-6 animate-in fade-in duration-300">
         <header className="flex justify-between items-center max-w-md mx-auto w-full">
           <span className="text-xs font-black tracking-widest uppercase opacity-75">
             {t.salonName}
@@ -245,18 +259,27 @@ export default function Status() {
           </span>
         </header>
 
-        <main className="flex-1 flex flex-col items-center justify-center text-center max-w-md mx-auto w-full my-auto py-8">
-          <div className="w-28 h-28 rounded-full bg-charcoal text-gold flex items-center justify-center text-5xl mb-6 shadow-2xl animate-bounce">
+        <main className="flex-1 flex flex-col items-center justify-center text-center max-w-md mx-auto w-full my-auto py-6 space-y-4">
+          <div className="w-24 h-24 rounded-full bg-charcoal text-gold flex items-center justify-center text-4xl shadow-2xl animate-bounce">
             💈
           </div>
 
-          <h1 className="text-3xl sm:text-4xl font-black tracking-tight mb-3 text-charcoal leading-tight">
-            {t.statusPage.yourTurnAlert}
+          <h1 className="text-2xl sm:text-4xl font-black tracking-tight text-charcoal leading-tight">
+            {lang === 'gu'
+              ? `તમારો વારો આવી ગયો છે! ${barberDisplayName} પાસે પધારો.`
+              : `It's your turn! Go to ${barberDisplayName}.`}
           </h1>
 
-          <p className="text-base sm:text-lg font-bold text-charcoal/80 mb-6 max-w-xs">
-            {t.statusPage.yourTurnSub}
+          <p className="text-sm sm:text-base font-bold text-charcoal/80 max-w-xs">
+            {lang === 'gu'
+              ? `${barberDisplayName} તમારી રાહ જોઈ રહ્યા છે.`
+              : `Please proceed to ${barberDisplayName}'s chair now.`}
           </p>
+
+          {/* Progress stepper visible on Called screen, below the announcement */}
+          <div className="w-full bg-charcoal/10 backdrop-blur-sm rounded-3xl p-3 border border-charcoal/15">
+            <ProgressStepper currentStatus={entry.status} />
+          </div>
 
           {/* Assigned Barber Highlight Card */}
           <div className="w-full bg-charcoal text-white rounded-3xl p-5 shadow-2xl border border-charcoal/20 space-y-2">
@@ -272,6 +295,16 @@ export default function Status() {
                 {entry.totalDuration} {t.minutesShort}
               </span>
             </div>
+          </div>
+
+          {/* Back to Home Button */}
+          <div className="w-full pt-2">
+            <button
+              onClick={() => navigate('/')}
+              className="w-full py-3 px-6 rounded-2xl font-bold text-sm bg-charcoal text-gold hover:bg-charcoal/90 active:scale-[0.99] transition shadow-lg"
+            >
+              {t.statusPage.backHomeBtn}
+            </button>
           </div>
         </main>
 
@@ -329,7 +362,7 @@ export default function Status() {
 
         {/* In Chair State Alert */}
         {entry.status === STATUS.IN_CHAIR && (
-          <div className="p-5 rounded-3xl bg-sky-950/40 border border-sky-500/30 text-center space-y-2">
+          <div className="p-5 rounded-3xl bg-sky-950/40 border border-sky-500/30 text-center space-y-3">
             <div className="text-3xl">✂️</div>
             <h3 className="text-base font-bold text-sky-300">
               {t.statusPage.inChairAlert}
@@ -344,6 +377,12 @@ export default function Status() {
                 </span>
               </p>
             )}
+            <button
+              onClick={() => navigate('/')}
+              className="py-2.5 px-5 rounded-xl font-semibold text-xs bg-white/10 hover:bg-white/20 text-white transition mt-2"
+            >
+              {t.statusPage.backHomeBtn}
+            </button>
           </div>
         )}
 
@@ -449,32 +488,53 @@ export default function Status() {
             </div>
           )}
 
-        {/* Barber Preference Card */}
+        {/* Barber Preference & Expected Barber Card */}
         <div className="p-4 rounded-3xl bg-white/5 border border-white/10 space-y-2">
           <div className="text-xs uppercase tracking-wider text-white/50 font-bold">
-            {t.statusPage.assignedBarberHeading}
+            {entry.barberPreference === 'any'
+              ? t.join.expectedBarber
+              : t.statusPage.assignedBarberHeading}
           </div>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-2xl bg-gold/10 border border-gold/30 flex items-center justify-center text-lg text-gold font-bold">
-                {preferredBarberDoc
+                {entry.barberPreference !== 'any' && preferredBarberDoc
                   ? preferredBarberDoc.nameEN.charAt(0)
+                  : expectedBarberName
+                  ? expectedBarberName.charAt(0)
                   : '✂️'}
               </div>
               <div>
                 <div className="font-bold text-sm text-white">
-                  {preferredBarberDoc
-                    ? lang === 'gu'
-                      ? preferredBarberDoc.nameGU
-                      : preferredBarberDoc.nameEN
+                  {entry.barberPreference !== 'any'
+                    ? preferredBarberDoc
+                      ? lang === 'gu'
+                        ? preferredBarberDoc.nameGU
+                        : preferredBarberDoc.nameEN
+                      : entry.barberPreference
+                    : expectedBarberName
+                    ? (() => {
+                        const bDoc = barbers.find(
+                          (b) =>
+                            b.nameEN.toLowerCase() ===
+                            expectedBarberName.toLowerCase()
+                        );
+                        return bDoc
+                          ? lang === 'gu'
+                            ? bDoc.nameGU
+                            : bDoc.nameEN
+                          : expectedBarberName;
+                      })()
                     : t.anyBarber}
                 </div>
                 <div className="text-[11px] text-white/40">
-                  {preferredBarberDoc
-                    ? preferredBarberDoc.onBreak
-                      ? t.join.onBreakBadge
-                      : 'On Duty'
-                    : t.join.anyBarberDesc}
+                  {entry.barberPreference === 'any'
+                    ? lang === 'gu'
+                      ? 'પસંદગી: કોઈપણ નાઈ (સૌથી ઝડપી)'
+                      : 'Preference: Any Barber (Fastest)'
+                    : preferredBarberDoc && preferredBarberDoc.onBreak
+                    ? t.join.onBreakBadge
+                    : 'On Duty'}
                 </div>
               </div>
             </div>
@@ -511,12 +571,18 @@ export default function Status() {
 
         {/* Cancel Button (Visible ONLY when WAITING) */}
         {entry.status === STATUS.WAITING && (
-          <div className="pt-2">
+          <div className="pt-2 space-y-2">
             <button
               onClick={() => setShowCancelModal(true)}
               className="w-full py-3.5 px-4 rounded-2xl font-bold text-xs uppercase tracking-wider text-red-300 border border-red-500/40 hover:bg-red-950/40 active:bg-red-950/60 transition"
             >
               {t.statusPage.cancelSpotBtn}
+            </button>
+            <button
+              onClick={() => navigate('/')}
+              className="w-full py-2.5 px-4 rounded-xl font-medium text-xs text-white/50 hover:text-white/80 hover:bg-white/5 transition"
+            >
+              {t.statusPage.backHomeBtn}
             </button>
           </div>
         )}

@@ -1,3 +1,14 @@
+import {
+  runTransaction,
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  serverTimestamp,
+} from 'firebase/firestore';
+import { db } from './firebase.js';
+
 /**
  * Queue Rules & State Machine Logic
  * Single source of truth for queue calculations, transitions, and validations.
@@ -75,57 +86,171 @@ export function getPositionInQueue(queueEntries, currentEntry) {
 }
 
 /**
- * Calculate estimated wait time in minutes for a customer in waiting status.
- * Formula: totalServiceMinutesAhead / numberOfWorkingBarbers, rounded up to nearest 5 minutes.
+ * Simulate the queue in order to compute expected barber and estimated wait time for every waiting customer.
+ *
+ * Rules from docs/03-flows-rules.md:
+ * 1. Initial state:
+ *    - Each working barber (onDuty === true && onBreak === false) is free after the remaining
+ *      minutes of the customer currently in their chair (0 if none).
+ *    - Barbers on break or off duty get 0 capacity and receive NO "Any" customers.
+ * 2. In order of waiting customers (createdAt asc):
+ *    - Customer who chose a barber: goes to that barber. Wait = that barber's free time.
+ *      That barber's free time increases by the customer's duration.
+ *    - Customer who chose "Any": goes to whichever working barber becomes free first.
+ *      Ties broken by lowest barber `order` (or index).
+ *      Wait = that barber's free time. That barber's free time increases by the customer's duration.
+ * 3. All wait times are rounded up to the nearest 5 minutes (e.g. 12 min -> 15 min).
+ *
+ * @param {Array} queueEntries - Array of all queue entries
+ * @param {Array} barbers - Array of all barber docs
+ * @param {number} [currentTimeMillis=Date.now()] - Reference time for calculating remaining in-chair minutes
+ * @returns {Map<string, { expectedBarber: string|null, estimatedWait: number|null }>} Map keyed by entry.id
+ */
+export function simulateQueueWaitTimes(queueEntries, barbers, currentTimeMillis = Date.now()) {
+  const results = new Map();
+
+  // Active working barbers (sorted by barber.order asc)
+  const workingBarbers = barbers
+    .filter((b) => b.onDuty === true && !b.onBreak)
+    .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+
+  // Initialize free time map for all barbers in the system
+  const barberFreeTime = {};
+  for (const b of barbers) {
+    barberFreeTime[b.nameEN.toLowerCase()] = 0;
+  }
+
+  // Calculate remaining in-chair minutes for each working barber
+  for (const entry of queueEntries) {
+    if (entry.status === STATUS.IN_CHAIR && entry.assignedBarber) {
+      const barberKey = entry.assignedBarber.trim().toLowerCase();
+      if (barberFreeTime[barberKey] !== undefined) {
+        let remaining = Number(entry.totalDuration) || 0;
+        if (entry.startedAt) {
+          const startedMillis = getTimestampMillis(entry.startedAt);
+          const elapsedMinutes = Math.max(0, Math.floor((currentTimeMillis - startedMillis) / (60 * 1000)));
+          remaining = Math.max(0, remaining - elapsedMinutes);
+        }
+        barberFreeTime[barberKey] = remaining;
+      }
+    }
+  }
+
+  // If there are zero active working barbers, no wait times can be computed
+  if (workingBarbers.length === 0) {
+    for (const entry of queueEntries) {
+      if (entry.status === STATUS.WAITING) {
+        results.set(entry.id, {
+          expectedBarber: null,
+          estimatedWait: null,
+        });
+      }
+    }
+    return results;
+  }
+
+  // Sort all waiting customers in chronological order (createdAt ascending)
+  const waitingEntries = queueEntries
+    .filter((entry) => entry.status === STATUS.WAITING)
+    .sort((a, b) => getTimestampMillis(a.createdAt) - getTimestampMillis(b.createdAt));
+
+  for (const customer of waitingEntries) {
+    const pref = (customer.barberPreference || 'any').trim().toLowerCase();
+    const duration = Number(customer.totalDuration) || 0;
+
+    let assignedBarberName = null;
+    let waitMinutes = 0;
+
+    if (pref === 'any') {
+      // Find the working barber who becomes free first (ties go to lowest barber order)
+      let minTime = Infinity;
+      let chosenBarber = null;
+
+      for (const barber of workingBarbers) {
+        const bKey = barber.nameEN.toLowerCase();
+        const freeAt = barberFreeTime[bKey] ?? 0;
+        if (freeAt < minTime) {
+          minTime = freeAt;
+          chosenBarber = barber;
+        }
+      }
+
+      if (chosenBarber) {
+        assignedBarberName = chosenBarber.nameEN;
+        const bKey = chosenBarber.nameEN.toLowerCase();
+        waitMinutes = barberFreeTime[bKey];
+        barberFreeTime[bKey] += duration;
+      }
+    } else {
+      // Specific barber chosen
+      const matchedWorkingBarber = workingBarbers.find(
+        (b) => b.nameEN.toLowerCase() === pref
+      );
+
+      if (matchedWorkingBarber) {
+        assignedBarberName = matchedWorkingBarber.nameEN;
+        const bKey = matchedWorkingBarber.nameEN.toLowerCase();
+        waitMinutes = barberFreeTime[bKey];
+        barberFreeTime[bKey] += duration;
+      } else {
+        // Preferred barber is off duty or on break
+        // Customer still waits for that specific barber, but wait time cannot be determined reliably
+        const matchedDoc = barbers.find((b) => b.nameEN.toLowerCase() === pref);
+        assignedBarberName = matchedDoc ? matchedDoc.nameEN : customer.barberPreference;
+        waitMinutes = null;
+      }
+    }
+
+    const roundedWait =
+      waitMinutes === null
+        ? null
+        : waitMinutes === 0
+        ? 0
+        : Math.ceil(waitMinutes / 5) * 5;
+
+    results.set(customer.id, {
+      expectedBarber: assignedBarberName,
+      estimatedWait: roundedWait,
+    });
+  }
+
+  return results;
+}
+
+/**
+ * Calculate estimated wait time and expected barber for a single waiting customer.
+ * Wrapper around simulateQueueWaitTimes for easy use across screens.
  *
  * @param {Array} queueEntries - All queue entries
- * @param {Object} currentEntry - The customer's queue entry
- * @param {Array} barbers - Array of barber docs ({ nameEN, onDuty, onBreak })
- * @returns {number|null} Minutes (rounded up to nearest 5), or null if wait time unavailable
+ * @param {Object} currentEntry - Customer queue entry
+ * @param {Array} barbers - Array of barber docs
+ * @returns {{ expectedBarber: string|null, estimatedWait: number|null }}
  */
 export function calculateEstimatedWait(queueEntries, currentEntry, barbers) {
   if (!currentEntry || currentEntry.status !== STATUS.WAITING) {
-    return null;
+    return { expectedBarber: null, estimatedWait: null };
   }
 
-  // Count active working barbers (onDuty === true && onBreak === false)
-  const workingBarbersCount = barbers.filter(
-    (b) => b.onDuty === true && !b.onBreak
-  ).length;
+  // Ensure currentEntry is present in queue list
+  const entriesWithCurrent = queueEntries.some((e) => e.id === currentEntry.id)
+    ? queueEntries
+    : [...queueEntries, currentEntry];
 
-  if (workingBarbersCount === 0) {
-    return null; // Signals wait time unavailable
-  }
+  const simulation = simulateQueueWaitTimes(entriesWithCurrent, barbers);
+  const result = simulation.get(currentEntry.id);
 
-  const currentCreated = getTimestampMillis(currentEntry.createdAt);
-
-  // Sum totalDuration of all waiting entries ahead of this one
-  const minutesAhead = queueEntries
-    .filter((entry) => {
-      if (entry.status !== STATUS.WAITING) return false;
-      const entryCreated = getTimestampMillis(entry.createdAt);
-      return entryCreated < currentCreated;
-    })
-    .reduce((sum, entry) => sum + (Number(entry.totalDuration) || 0), 0);
-
-  // If no one is ahead, estimated wait is 0 (or next up)
-  if (minutesAhead === 0) {
-    return 0;
-  }
-
-  const rawEstimate = minutesAhead / workingBarbersCount;
-  // Round up to nearest 5 minutes
-  return Math.ceil(rawEstimate / 5) * 5;
+  return result || { expectedBarber: null, estimatedWait: null };
 }
 
 /**
  * Call Next logic for a specific barber.
- * Finds the earliest 'waiting' customer who prefers this barber or 'any'.
+ * Finds the earliest 'waiting' customer who prefers this barber or 'any',
+ * and assigns this barber as assignedBarber on the returned entry.
  * Exclusivity rule: Ravi's customers NEVER go to another barber.
  *
  * @param {Array} queueEntries - Array of queue entries
  * @param {string} barberName - Name of the available barber (e.g. 'Ravi')
- * @returns {Object|null} The chosen queue entry or null
+ * @returns {Object|null} The chosen queue entry with assignedBarber set, or null
  */
 export function callNextForBarber(queueEntries, barberName) {
   if (!barberName) return null;
@@ -144,7 +269,12 @@ export function callNextForBarber(queueEntries, barberName) {
     return pref === targetName || pref === 'any';
   });
 
-  return matched || null;
+  if (!matched) return null;
+
+  return {
+    ...matched,
+    assignedBarber: barberName,
+  };
 }
 
 /**
@@ -191,6 +321,130 @@ export function callNextAvailable(queueEntries, barbers) {
   }
 
   return null;
+}
+
+/**
+ * Pure auto-assignment matching logic.
+ * Given a list of barbers and queue entries, finds all (waitingCustomer, freeBarber) pairs
+ * where a barber is currently free and has an eligible waiting customer.
+ * Used by autoAssign and testable in isolation.
+ *
+ * @param {Array} queueEntries
+ * @param {Array} barbers
+ * @returns {Array<{ customer: Object, barberName: string }>}
+ */
+export function getAutoAssignments(queueEntries, barbers) {
+  // Find which barbers currently have a customer in CALLED or IN_CHAIR
+  const busyBarberNames = new Set(
+    queueEntries
+      .filter((e) => e.status === STATUS.CALLED || e.status === STATUS.IN_CHAIR)
+      .map((e) => (e.assignedBarber || '').trim().toLowerCase())
+      .filter(Boolean)
+  );
+
+  // Active working barbers who are free right now (sorted by order asc)
+  const freeBarbers = barbers
+    .filter((b) => {
+      const nameKey = (b.nameEN || '').trim().toLowerCase();
+      return b.onDuty === true && !b.onBreak && !busyBarberNames.has(nameKey);
+    })
+    .sort((a, b) => (a.order ?? 99) - (b.order ?? 99));
+
+  if (freeBarbers.length === 0) return [];
+
+  // Sort waiting customers in chronological order
+  const waitingCustomers = queueEntries
+    .filter((e) => e.status === STATUS.WAITING)
+    .sort((a, b) => getTimestampMillis(a.createdAt) - getTimestampMillis(b.createdAt));
+
+  const assignedCustomerIds = new Set();
+  const assignedBarberNames = new Set();
+  const assignments = [];
+
+  for (const barber of freeBarbers) {
+    const barberKey = barber.nameEN.trim().toLowerCase();
+    if (assignedBarberNames.has(barberKey)) continue;
+
+    // Find the earliest waiting customer who prefers this barber or 'any'
+    const candidate = waitingCustomers.find((c) => {
+      if (assignedCustomerIds.has(c.id)) return false;
+      const pref = (c.barberPreference || 'any').trim().toLowerCase();
+      return pref === barberKey || pref === 'any';
+    });
+
+    if (candidate) {
+      assignedCustomerIds.add(candidate.id);
+      assignedBarberNames.add(barberKey);
+      assignments.push({
+        customer: candidate,
+        barberName: barber.nameEN,
+      });
+    }
+  }
+
+  return assignments;
+}
+
+/**
+ * Auto-Call rule execution via Firestore transaction.
+ * Ensures concurrency safety so two clients cannot call the same customer
+ * or assign two customers to the same barber.
+ *
+ * @param {import('firebase/firestore').Firestore} [firestoreDb=db]
+ * @returns {Promise<Array<{ customerId: string, customerName: string, barberName: string }>>}
+ */
+export async function autoAssign(firestoreDb = db) {
+  if (!firestoreDb) return [];
+
+  try {
+    // 1. Fetch current barbers and active queue docs
+    const barbersSnap = await getDocs(collection(firestoreDb, 'barbers'));
+    const barbers = barbersSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    const queueQ = query(
+      collection(firestoreDb, 'queue'),
+      where('status', 'in', [STATUS.WAITING, STATUS.CALLED, STATUS.IN_CHAIR])
+    );
+    const queueSnap = await getDocs(queueQ);
+    const queueEntries = queueSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+    // Compute intended assignments
+    const assignments = getAutoAssignments(queueEntries, barbers);
+    if (assignments.length === 0) return [];
+
+    const executed = [];
+
+    // Run transaction for each candidate assignment
+    for (const item of assignments) {
+      const customerDocRef = doc(firestoreDb, 'queue', item.customer.id);
+
+      await runTransaction(firestoreDb, async (transaction) => {
+        const freshSnap = await transaction.get(customerDocRef);
+        if (!freshSnap.exists()) return;
+
+        const data = freshSnap.data();
+        // Concurrency guard: must still be waiting
+        if (data.status !== STATUS.WAITING) return;
+
+        transaction.update(customerDocRef, {
+          status: STATUS.CALLED,
+          assignedBarber: item.barberName,
+          calledAt: serverTimestamp(),
+        });
+
+        executed.push({
+          customerId: item.customer.id,
+          customerName: data.name,
+          barberName: item.barberName,
+        });
+      });
+    }
+
+    return executed;
+  } catch (err) {
+    console.error('autoAssign transaction error:', err);
+    return [];
+  }
 }
 
 /**
