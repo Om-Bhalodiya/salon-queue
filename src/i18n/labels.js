@@ -96,7 +96,10 @@ export const labels = {
     // 3. My Status Screen
     statusPage: {
       title: 'My Status',
+      startComingHeading: 'Almost your turn! Please start heading to the salon.',
+      startComingDesc: 'You are #2 in line. We will call you very soon.',
       yourTurnAlert: "It's Your Turn! Please proceed to the salon chair.",
+      yourTurnSub: "Please head to your barber's chair now.",
       inChairAlert: 'Service in progress. Enjoy your haircut!',
       doneAlert: 'All done! Thank you for visiting Royal Salon. 💈',
       cancelledAlert: 'This ticket has been cancelled.',
@@ -310,7 +313,10 @@ export const labels = {
     // 3. My Status Screen
     statusPage: {
       title: 'મારી સ્થિતિ',
+      startComingHeading: 'તમારો વારો નજીક છે! કૃપા કરીને સલૂન તરફ આવવાનું શરૂ કરો.',
+      startComingDesc: 'તમે ક્યૂમાં #2 ક્રમે છો. અમે તમને ટૂંક સમયમાં બોલાવીશું.',
       yourTurnAlert: 'તમારો વારો આવી ગયો છે! કૃપા કરીને સલૂનમાં ખુરશી પર પધારો.',
+      yourTurnSub: 'કૃપા કરીને હવે તમારા નાઈની ખુરશી પર પધારો.',
       inChairAlert: 'સેવા ચાલુ છે. સરસ અનુભવ માણો!',
       doneAlert: 'સેવા પૂર્ણ થઈ ગઈ છે! રોયલ સલૂનની મુલાકાત બદલ આભાર. 💈',
       cancelledAlert: 'આ ટોકન રદ કરવામાં આવ્યું છે.',
